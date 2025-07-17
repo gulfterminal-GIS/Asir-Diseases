@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+    <title>لوحة معلومات المراكز الصحية - منطقة عسير</title>
+    <link rel="stylesheet" href="https://js.arcgis.com/4.30/esri/themes/light/main.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Theme Toggle -->
+    <button class="theme-toggle" id="themeToggle" aria-label="تبديل الوضع">
+        <i class="fas fa-moon"></i>
+    </button>
+
+    <!-- Header -->
+    <header class="app-header">
+        <div class="header-content">
+            <h1 class="app-title">
+                <i class="fas fa-hospital"></i>
+                لوحة معلومات المراكز الصحية
+            </h1>
+            <span class="region-badge">منطقة عسير</span>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <div class="main-container">
+        <!-- Map Container -->
+        <div id="viewDiv" class="map-container">
+            <!-- Custom Map Controls -->
+            <div class="custom-controls">
+                <button class="control-btn zoom-in" id="zoomIn" aria-label="تكبير">
+                    <i class="fas fa-plus"></i>
+                </button>
+                <button class="control-btn zoom-out" id="zoomOut" aria-label="تصغير">
+                    <i class="fas fa-minus"></i>
+                </button>
+                <button class="control-btn home" id="homeBtn" aria-label="العرض الافتراضي">
+                    <i class="fas fa-home"></i>
+                </button>
+                <button class="control-btn location" id="locationBtn" aria-label="موقعي">
+                    <i class="fas fa-location-crosshairs"></i>
+                </button>
+            </div>
+
+            <!-- Custom Legend -->
+            <div class="custom-legend" id="legendWidget">
+                <div class="legend-header">
+                    <i class="fas fa-layer-group"></i>
+                    <span>مفتاح الخريطة</span>
+                    <button class="legend-toggle" id="legendToggle">
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
+                </div>
+                <div class="legend-content">
+                    <div class="legend-item">
+                        <span class="legend-label">عدد التحويلات</span>
+                        <div class="heatmap-gradient"></div>
+                        <div class="gradient-labels">
+                            <span>منخفض</span>
+                            <span>مرتفع</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Layer Control -->
+            <div class="layer-control" id="layerControl">
+                <div class="layer-header">
+                    <i class="fas fa-layers"></i>
+                    <span>الطبقات</span>
+                    <button class="layer-toggle" id="layerToggle">
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
+                </div>
+                <div class="layer-content">
+                    <div class="layer-item">
+                        <label class="custom-checkbox">
+                            <input type="checkbox" id="healthLayer" checked>
+                            <span class="checkmark"></span>
+                            <span class="layer-name">المراكز الصحية</span>
+                        </label>
+                    </div>
+                    <div class="layer-item">
+                        <label class="custom-checkbox">
+                            <input type="checkbox" id="citiesLayer">
+                            <span class="checkmark"></span>
+                            <span class="layer-name">المدن</span>
+                        </label>
+                    </div>
+                    <div class="layer-item">
+                        <label class="custom-checkbox">
+                            <input type="checkbox" id="boundariesLayer">
+                            <span class="checkmark"></span>
+                            <span class="layer-name">حدود المنطقة</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Side Panel -->
+        <aside class="side-panel">
+            <!-- Statistics Dashboard -->
+            <div class="stats-dashboard">
+                <h2 class="section-title">
+                    <i class="fas fa-chart-line"></i>
+                    الإحصائيات
+                </h2>
+                
+                <div class="stats-grid">
+                    <div class="stat-card" id="totalCenters">
+                        <div class="stat-icon">
+                            <i class="fas fa-hospital-alt"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-value" data-value="0">0</div>
+                            <div class="stat-label">مركز صحي</div>
+                        </div>
+                    </div>
+
+                    <div class="stat-card" id="totalTransfers">
+                        <div class="stat-icon">
+                            <i class="fas fa-exchange-alt"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-value" data-value="0">0</div>
+                            <div class="stat-label">إجمالي التحويلات</div>
+                        </div>
+                    </div>
+
+                    <div class="stat-card" id="avgTransfers">
+                        <div class="stat-icon">
+                            <i class="fas fa-chart-bar"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-value" data-value="0">0</div>
+                            <div class="stat-label">متوسط التحويلات</div>
+                        </div>
+                    </div>
+
+                    <div class="stat-card" id="activeCenters">
+                        <div class="stat-icon">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-value" data-value="0">0</div>
+                            <div class="stat-label">مراكز نشطة</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filter Panel -->
+            <div class="filter-panel">
+                <h2 class="section-title">
+                    <i class="fas fa-filter"></i>
+                    التصفية
+                </h2>
+                
+                <div class="filter-group">
+                    <label class="filter-label">القطاع</label>
+                    <select class="filter-select" id="sectorFilter">
+                        <option value="">جميع القطاعات</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label class="filter-label">نوع المنشأة</label>
+                    <select class="filter-select" id="typeFilter">
+                        <option value="">جميع الأنواع</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label class="filter-label">عدد التحويلات</label>
+                    <div class="range-slider">
+                        <input type="range" id="transferRange" min="0" max="1000" value="0" class="slider">
+                        <div class="range-values">
+                            <span id="rangeMin">0</span>
+                            <span>-</span>
+                            <span id="rangeMax">1000</span>
+                        </div>
+                    </div>
+                </div>
+
+                <button class="filter-apply" id="applyFilters">
+                    <i class="fas fa-check"></i>
+                    تطبيق التصفية
+                </button>
+                <button class="filter-reset" id="resetFilters">
+                    <i class="fas fa-undo"></i>
+                    إعادة تعيين
+                </button>
+            </div>
+
+            <!-- Disease Distribution -->
+            <div class="disease-panel">
+                <h2 class="section-title">
+                    <i class="fas fa-virus"></i>
+                    توزيع الأمراض
+                </h2>
+                <div class="disease-grid" id="diseaseGrid">
+                    <!-- Disease cards will be populated by JavaScript -->
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Custom Popup Template -->
+    <div class="custom-popup" id="customPopup" style="display: none;">
+        <div class="popup-header">
+            <h3 class="popup-title" id="popupTitle"></h3>
+            <button class="popup-close" id="popupClose">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="popup-content" id="popupContent">
+            <!-- Content will be populated dynamically -->
+        </div>
+    </div>
+
+    <!-- Loading Spinner -->
+    <div class="loading-spinner" id="loadingSpinner">
+        <div class="spinner"></div>
+        <span>جاري التحميل...</span>
+    </div>
+
+    <script src="https://js.arcgis.com/4.30/"></script>
+    <script type="module" src="script.js"></script>
+</body>
+</html>

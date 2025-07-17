@@ -1,0 +1,912 @@
+let view;
+let map;
+let layers = {};
+let stats = {
+    totalCenters: 0,
+    totalTransfers: 0,
+    avgTransfers: 0,
+    activeCenters: 0
+};
+let currentTheme = 'light';
+let popupGraphic = null;
+
+function loadModule(moduleName) {
+    return new Promise((resolve, reject) => {
+        require([moduleName], (module) => {
+            if (module) {
+                resolve(module);
+            } else {
+                reject(new Error(`Module not found: ${moduleName}`));
+            }
+        }, (error) => {
+            reject(error);
+        });
+    });
+}
+
+async function initializeHealthcareDashboard() {
+    try {
+        showLoading(true);
+        
+        const [
+            esriConfig, 
+            intl, 
+            Map, 
+            MapView, 
+            reactiveUtils, 
+            GeoJSONLayer, 
+            GraphicsLayer,
+            Graphic,
+            Point,
+            Locate
+        ] = await Promise.all([
+            loadModule("esri/config"),
+            loadModule("esri/intl"),
+            loadModule("esri/Map"),
+            loadModule("esri/views/MapView"),
+            loadModule("esri/core/reactiveUtils"),
+            loadModule("esri/layers/GeoJSONLayer"),
+            loadModule("esri/layers/GraphicsLayer"),
+            loadModule("esri/Graphic"),
+            loadModule("esri/geometry/Point"),
+            loadModule("esri/widgets/Locate")
+        ]);
+
+        intl.setLocale("ar");
+        esriConfig.apiKey = "AAPK756f006de03e44d28710cb446c8dedb4rkQyhmzX6upFiYPzQT0HNQNMJ5qPyO1TnPDSPXT4EAM_DlQSj20ShRD7vyKa7a1H";
+
+        // Create heatmap renderer
+        const heatmapRenderer = {
+            type: "heatmap",
+            field: "transfers_number",
+            colorStops: [
+                { color: [133, 193, 200, 0], ratio: 0 },
+                { color: [133, 193, 200, 255], ratio: 0.01 },
+                { color: [144, 161, 190, 255], ratio: 0.0925 },
+                { color: [156, 129, 132, 255], ratio: 0.175 },
+                { color: [167, 97, 170, 255], ratio: 0.2575 },
+                { color: [175, 73, 128, 255], ratio: 0.34 },
+                { color: [184, 48, 85, 255], ratio: 0.4225 },
+                { color: [192, 24, 42, 255], ratio: 0.505 },
+                { color: [200, 0, 0, 255], ratio: 0.5875 },
+                { color: [211, 51, 0, 255], ratio: 0.67 },
+                { color: [222, 102, 0, 255], ratio: 0.7525 },
+                { color: [233, 153, 0, 255], ratio: 0.835 },
+                { color: [244, 204, 0, 255], ratio: 0.9175 },
+                { color: [255, 255, 0, 255], ratio: 1 }
+            ],
+            maxDensity: 7,
+            minDensity: 0
+        };
+
+        // Simple renderer for zoomed in view
+        const simpleRenderer = {
+            type: "simple",
+            symbol: {
+                type: "simple-marker",
+                size: 10,
+                color: [175, 73, 128, 0.8],
+                outline: {
+                    color: [255, 255, 255, 0.8],
+                    width: 2
+                }
+            }
+        };
+
+        // Create map
+        map = new Map({
+            basemap: "gray-vector"
+        });
+
+        // Create view with custom settings
+        view = new MapView({
+            container: "viewDiv",
+            center: [43.417931, 18.778259],
+            zoom: 8,
+            map: map,
+            popup: null, // Disable default popup
+            ui: {
+                components: [] // Remove default UI components
+            }
+        });
+
+        // Create healthcare centers layer
+        layers.healthcareCenters = new GeoJSONLayer({
+            url: "https://raw.githubusercontent.com/gulfterminal-GIS/Asir-Diseases/refs/heads/main/transfers_number.geojson",
+            title: "المراكز الصحية",
+            renderer: heatmapRenderer,
+            visible: true
+        });
+
+        // Create cities layer with custom renderer
+        layers.cities = new GeoJSONLayer({
+            url: "https://raw.githubusercontent.com/gulfterminal-GIS/Asir-Diseases/refs/heads/main/aser_cities.geojson",
+            title: "المدن",
+            renderer: {
+                type: "simple",
+                symbol: {
+                    type: "simple-fill",
+                    color: [37, 99, 235, 0.1],
+                    outline: {
+                        color: [37, 99, 235, 0.5],
+                        width: 2
+                    }
+                }
+            },
+            visible: false,
+            labelingInfo: [{
+                symbol: {
+                    type: "text",
+                    color: "#1f2937",
+                    haloColor: "white",
+                    haloSize: 2,
+                    font: {
+                        size: 12,
+                        family: "Arial",
+                        weight: "bold"
+                    }
+                },
+                labelPlacement: "center-center",
+                labelExpressionInfo: {
+                    expression: "$feature.Gov_name"
+                }
+            }]
+        });
+
+        // Create boundaries layer
+        layers.boundaries = new GeoJSONLayer({
+            url: "https://raw.githubusercontent.com/gulfterminal-GIS/Asir-Diseases/refs/heads/main/aser_boundaries.geojson",
+            title: "حدود المنطقة",
+            renderer: {
+                type: "simple",
+                symbol: {
+                    type: "simple-fill",
+                    color: [0, 0, 0, 0],
+                    outline: {
+                        color: [124, 58, 237, 0.8],
+                        width: 3
+                    }
+                }
+            },
+            visible: false
+        });
+
+        // Add layers to map
+        map.add(layers.boundaries);
+        map.add(layers.cities);
+        map.add(layers.healthcareCenters);
+
+        // Create graphics layer for custom popups
+        const popupLayer = new GraphicsLayer({
+            elevationInfo: {
+                mode: "on-the-ground"
+            }
+        });
+        map.add(popupLayer);
+
+        // Wait for layers to load
+        await view.when();
+
+        // Setup view interactions
+        Promise.all([
+            view.whenLayerView(layers.healthcareCenters),
+            view.whenLayerView(layers.cities),
+            view.whenLayerView(layers.boundaries)
+        ]).then(([healthLayerView, citiesLayerView, boundariesLayerView]) => {
+            return Promise.all([
+                reactiveUtils.whenOnce(() => !healthLayerView.updating)
+            ]);
+        }).then(() => {
+            // Go to healthcare centers extent
+            view.goTo({
+                target: layers.healthcareCenters.fullExtent
+            }, {
+                duration: 2000
+            });
+
+            // Calculate statistics
+            calculateStatistics();
+            
+            // Populate filter options
+            populateFilters();
+
+            // Switch renderer based on zoom
+            const savedHeatmapRenderer = layers.healthcareCenters.renderer;
+            reactiveUtils.watch(
+                () => view.scale,
+                (scale) => {
+                    layers.healthcareCenters.renderer = scale <= 72224 ? simpleRenderer : savedHeatmapRenderer;
+                }
+            );
+        });
+
+        // Setup custom event handlers
+        setupCustomEventHandlers(view, Graphic, Point);
+        
+        // Setup custom controls
+        setupCustomControls(view, Locate);
+        
+        // Initialize theme
+        initializeTheme();
+
+        showLoading(false);
+
+        return [view, map];
+    } catch (error) {
+        console.error("Error initializing dashboard:", error);
+        showLoading(false);
+        throw error;
+    }
+}
+
+// Setup custom map controls
+function setupCustomControls(view, Locate) {
+    // Zoom controls
+    document.getElementById('zoomIn').addEventListener('click', () => {
+        view.zoom += 1;
+    });
+
+    document.getElementById('zoomOut').addEventListener('click', () => {
+        view.zoom -= 1;
+    });
+
+    // Home button
+    document.getElementById('homeBtn').addEventListener('click', () => {
+        view.goTo({
+            target: layers.healthcareCenters.fullExtent
+        }, {
+            duration: 1000
+        });
+    });
+
+    // Location button
+    document.getElementById('locationBtn').addEventListener('click', async () => {
+        const locate = new Locate({
+            view: view
+        });
+        await locate.locate();
+    });
+}
+
+// Setup custom event handlers
+function setupCustomEventHandlers(view, Graphic, Point) {
+    // Handle map clicks for custom popups
+    view.on("click", async (event) => {
+        try {
+            const response = await view.hitTest(event);
+            const results = response.results.filter(result => 
+                result.graphic.layer === layers.healthcareCenters
+            );
+
+            if (results.length > 0) {
+                const graphic = results[0].graphic;
+                showCustomPopup(graphic, Point);
+            } else {
+                hideCustomPopup();
+            }
+        } catch (error) {
+            console.error("Error handling click:", error);
+        }
+    });
+
+    // Handle popup close
+    document.getElementById('popupClose').addEventListener('click', () => {
+        hideCustomPopup();
+    });
+
+    // Layer toggles
+    document.getElementById('healthLayer').addEventListener('change', (e) => {
+        layers.healthcareCenters.visible = e.target.checked;
+    });
+
+    document.getElementById('citiesLayer').addEventListener('change', (e) => {
+        layers.cities.visible = e.target.checked;
+    });
+
+    document.getElementById('boundariesLayer').addEventListener('change', (e) => {
+        layers.boundaries.visible = e.target.checked;
+    });
+
+    // Legend and layer control toggles
+    document.getElementById('legendToggle').addEventListener('click', () => {
+        const content = document.querySelector('.legend-content');
+        const icon = document.querySelector('#legendToggle i');
+        content.style.display = content.style.display === 'none' ? 'block' : 'none';
+        icon.classList.toggle('fa-chevron-down');
+        icon.classList.toggle('fa-chevron-up');
+    });
+
+    document.getElementById('layerToggle').addEventListener('click', () => {
+        const content = document.querySelector('.layer-content');
+        const icon = document.querySelector('#layerToggle i');
+        content.style.display = content.style.display === 'none' ? 'block' : 'none';
+        icon.classList.toggle('fa-chevron-down');
+        icon.classList.toggle('fa-chevron-up');
+    });
+
+    // Filter controls
+    document.getElementById('applyFilters').addEventListener('click', applyFilters);
+    document.getElementById('resetFilters').addEventListener('click', resetFilters);
+    document.getElementById('transferRange').addEventListener('input', (e) => {
+        document.getElementById('rangeMin').textContent = '0';
+        document.getElementById('rangeMax').textContent = e.target.value;
+    });
+
+    // Theme toggle
+    document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+}
+
+// Show custom popup
+function showCustomPopup(graphic, Point) {
+    const popup = document.getElementById('customPopup');
+    const attributes = graphic.attributes;
+
+    // Update popup title
+    document.getElementById('popupTitle').textContent = attributes.facility_name || 'مركز صحي';
+
+    // Create popup content
+    const content = `
+        <div class="popup-info-grid">
+            <div class="popup-info-item">
+                <div class="popup-info-label">النوع</div>
+                <div class="popup-info-value">${attributes.facility_type || 'غير محدد'}</div>
+            </div>
+            <div class="popup-info-item">
+                <div class="popup-info-label">القطاع</div>
+                <div class="popup-info-value">${attributes.Sector || 'غير محدد'}</div>
+            </div>
+            <div class="popup-info-item">
+                <div class="popup-info-label">الحالة</div>
+                <div class="popup-info-value">${attributes.facility_status || 'غير محدد'}</div>
+            </div>
+            <div class="popup-info-item">
+                <div class="popup-info-label">ساعات العمل</div>
+                <div class="popup-info-value">${attributes.working_hours || 'غير محدد'}</div>
+            </div>
+        </div>
+        
+        <h4 style="margin-top: 1.5rem; margin-bottom: 1rem; color: var(--text-secondary);">
+            <i class="fas fa-exchange-alt"></i> عدد التحويلات
+        </h4>
+        <div class="popup-info-grid">
+            <div class="popup-info-item">
+                <div class="popup-info-label">إجمالي التحويلات</div>
+                <div class="popup-info-value" style="color: var(--primary-color); font-size: 1.5rem;">
+                    ${attributes.transfers_number || 0}
+                </div>
+            </div>
+        </div>
+        
+        <h4 style="margin-top: 1.5rem; margin-bottom: 1rem; color: var(--text-secondary);">
+            <i class="fas fa-virus"></i> توزيع الأمراض
+        </h4>
+        <div class="disease-grid" style="grid-template-columns: repeat(3, 1fr);">
+            ${createDiseaseItem('الغدة الدرقية', attributes.thyroid_gland)}
+            ${createDiseaseItem('دهون الدم', attributes.tlood_lipids)}
+            ${createDiseaseItem('المرارة', attributes.gallbladder)}
+            ${createDiseaseItem('فقر الدم المنجلي', attributes.sickle_cell_anemia)}
+            ${createDiseaseItem('أمراض الكبد', attributes.liver_disease)}
+            ${createDiseaseItem('سرطان الثدي', attributes.breast_cancer)}
+            ${createDiseaseItem('سرطان القولون', attributes.colon_cancer)}
+            ${createDiseaseItem('سرطان عنق الرحم', attributes.cervical_cancer)}
+        </div>
+    `;
+
+    document.getElementById('popupContent').innerHTML = content;
+    popup.style.display = 'block';
+}
+
+// Create disease item for popup
+function createDiseaseItem(name, count) {
+    return `
+        <div class="disease-card" style="padding: 0.75rem;">
+            <div class="disease-name">${name}</div>
+            <div class="disease-count">${count || 0}</div>
+        </div>
+    `;
+}
+
+// Hide custom popup
+function hideCustomPopup() {
+    document.getElementById('customPopup').style.display = 'none';
+}
+
+// Calculate and display statistics
+async function calculateStatistics() {
+    try {
+        const query = layers.healthcareCenters.createQuery();
+        query.where = "1=1";
+        query.outStatistics = [
+            {
+                statisticType: "count",
+                onStatisticField: "OBJECTID",
+                outStatisticFieldName: "total_centers"
+            },
+            {
+                statisticType: "sum",
+                onStatisticField: "transfers_number",
+                outStatisticFieldName: "total_transfers"
+            },
+            {
+                statisticType: "avg",
+                onStatisticField: "transfers_number",
+                outStatisticFieldName: "avg_transfers"
+            }
+        ];
+
+        const results = await layers.healthcareCenters.queryFeatures(query);
+        if (results.features.length > 0) {
+            const stats = results.features[0].attributes;
+            
+            // Update statistics with animation
+            animateValue('totalCenters', 0, stats.total_centers, 2000);
+            animateValue('totalTransfers', 0, stats.total_transfers, 2000);
+            animateValue('avgTransfers', 0, Math.round(stats.avg_transfers), 2000);
+            
+            // Count active centers
+            const activeQuery = layers.healthcareCenters.createQuery();
+            activeQuery.where = "facility_status = 'Active'";
+            const activeResults = await layers.healthcareCenters.queryFeatureCount(activeQuery);
+            animateValue('activeCenters', 0, activeResults, 2000);
+        }
+
+        // Calculate disease distribution
+        calculateDiseaseDistribution();
+    } catch (error) {
+        console.error("Error calculating statistics:", error);
+    }
+}
+
+// Calculate disease distribution
+async function calculateDiseaseDistribution() {
+    try {
+        const diseases = [
+            { field: 'thyroid_gland', name: 'الغدة الدرقية', icon: 'fa-thyroid' },
+            { field: 'tlood_lipids', name: 'دهون الدم', icon: 'fa-tint' },
+            { field: 'gallbladder', name: 'المرارة', icon: 'fa-liver' },
+            { field: 'sickle_cell_anemia', name: 'فقر الدم المنجلي', icon: 'fa-dna' },
+            { field: 'liver_disease', name: 'أمراض الكبد', icon: 'fa-liver' },
+            { field: 'breast_cancer', name: 'سرطان الثدي', icon: 'fa-ribbon' },
+            { field: 'colon_cancer', name: 'سرطان القولون', icon: 'fa-colon' },
+            { field: 'cervical_cancer', name: 'سرطان عنق الرحم', icon: 'fa-female' }
+        ];
+
+        const diseaseGrid = document.getElementById('diseaseGrid');
+        diseaseGrid.innerHTML = '';
+
+        for (const disease of diseases) {
+            const query = layers.healthcareCenters.createQuery();
+            query.where = "1=1";
+            query.outStatistics = [{
+                statisticType: "sum",
+                onStatisticField: disease.field,
+                outStatisticFieldName: "total"
+            }];
+
+            const results = await layers.healthcareCenters.queryFeatures(query);
+            if (results.features.length > 0) {
+                const total = results.features[0].attributes.total || 0;
+                
+                const diseaseCard = document.createElement('div');
+                diseaseCard.className = 'disease-card';
+                diseaseCard.innerHTML = `
+                    <div class="disease-icon">
+                        <i class="fas ${disease.icon}"></i>
+                    </div>
+                    <div class="disease-name">${disease.name}</div>
+                    <div class="disease-count" data-value="${total}">0</div>
+                `;
+                
+                diseaseGrid.appendChild(diseaseCard);
+                
+                // Animate the count
+                setTimeout(() => {
+                    const countElement = diseaseCard.querySelector('.disease-count');
+                    animateValue(countElement, 0, total, 1500);
+                }, 100);
+            }
+        }
+    } catch (error) {
+        console.error("Error calculating disease distribution:", error);
+    }
+}
+
+// Populate filter dropdowns
+async function populateFilters() {
+    try {
+        // Get unique sectors
+        const sectorQuery = layers.healthcareCenters.createQuery();
+        sectorQuery.where = "1=1";
+        sectorQuery.returnDistinctValues = true;
+        sectorQuery.outFields = ["Sector"];
+        sectorQuery.orderByFields = ["Sector"];
+
+        const sectorResults = await layers.healthcareCenters.queryFeatures(sectorQuery);
+        const sectorSelect = document.getElementById('sectorFilter');
+        
+        sectorResults.features.forEach(feature => {
+            if (feature.attributes.Sector) {
+                const option = document.createElement('option');
+                option.value = feature.attributes.Sector;
+                option.textContent = feature.attributes.Sector;
+                sectorSelect.appendChild(option);
+            }
+        });
+
+        // Get unique facility types
+        const typeQuery = layers.healthcareCenters.createQuery();
+        typeQuery.where = "1=1";
+        typeQuery.returnDistinctValues = true;
+        typeQuery.outFields = ["facility_type"];
+        typeQuery.orderByFields = ["facility_type"];
+
+        const typeResults = await layers.healthcareCenters.queryFeatures(typeQuery);
+        const typeSelect = document.getElementById('typeFilter');
+        
+        typeResults.features.forEach(feature => {
+            if (feature.attributes.facility_type) {
+                const option = document.createElement('option');
+                option.value = feature.attributes.facility_type;
+                option.textContent = feature.attributes.facility_type;
+                typeSelect.appendChild(option);
+            }
+        });
+
+        // Set max value for transfer range
+        const maxQuery = layers.healthcareCenters.createQuery();
+        maxQuery.where = "1=1";
+        maxQuery.outStatistics = [{
+            statisticType: "max",
+            onStatisticField: "transfers_number",
+            outStatisticFieldName: "max_transfers"
+        }];
+
+        const maxResults = await layers.healthcareCenters.queryFeatures(maxQuery);
+        if (maxResults.features.length > 0) {
+            const maxTransfers = maxResults.features[0].attributes.max_transfers;
+            const rangeSlider = document.getElementById('transferRange');
+            rangeSlider.max = maxTransfers;
+            document.getElementById('rangeMax').textContent = maxTransfers;
+        }
+    } catch (error) {
+        console.error("Error populating filters:", error);
+    }
+}
+
+// Apply filters
+async function applyFilters() {
+    const sector = document.getElementById('sectorFilter').value;
+    const type = document.getElementById('typeFilter').value;
+    const maxTransfers = document.getElementById('transferRange').value;
+
+    let whereClause = "1=1";
+    
+    if (sector) {
+        whereClause += ` AND Sector = '${sector}'`;
+    }
+    
+    if (type) {
+        whereClause += ` AND facility_type = '${type}'`;
+    }
+    
+    whereClause += ` AND transfers_number <= ${maxTransfers}`;
+
+    // Apply definition expression to filter features
+    layers.healthcareCenters.definitionExpression = whereClause;
+
+    // Recalculate statistics with filters
+    calculateStatistics();
+    calculateDiseaseDistribution();
+
+    // Show filter notification
+    showNotification('تم تطبيق التصفية بنجاح');
+}
+
+// Reset filters
+function resetFilters() {
+    document.getElementById('sectorFilter').value = '';
+    document.getElementById('typeFilter').value = '';
+    document.getElementById('transferRange').value = document.getElementById('transferRange').max;
+    document.getElementById('rangeMax').textContent = document.getElementById('transferRange').max;
+    
+    // Clear definition expression
+    layers.healthcareCenters.definitionExpression = null;
+    
+    // Recalculate statistics
+    calculateStatistics();
+    calculateDiseaseDistribution();
+
+    showNotification('تم إعادة تعيين التصفية');
+}
+
+// Animate numeric values
+function animateValue(elementOrId, start, end, duration) {
+    const element = typeof elementOrId === 'string' 
+        ? document.querySelector(`#${elementOrId} .stat-value`)
+        : elementOrId;
+        
+    if (!element) return;
+
+    const startTime = performance.now();
+    const endValue = parseInt(end) || 0;
+    
+    function update(currentTime) {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        
+        const current = Math.floor(start + (endValue - start) * easeOutExpo(progress));
+        element.textContent = current.toLocaleString('ar-SA');
+        element.setAttribute('data-value', current);
+        
+        if (progress < 1) {
+            requestAnimationFrame(update);
+        }
+    }
+    
+    requestAnimationFrame(update);
+}
+
+// Easing function for smooth animation
+function easeOutExpo(x) {
+    return x === 1 ? 1 : 1 - Math.pow(2, -10 * x);
+}
+
+// Initialize theme
+function initializeTheme() {
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    currentTheme = savedTheme;
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    updateThemeIcon();
+}
+
+// Toggle theme
+function toggleTheme() {
+    currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', currentTheme);
+    localStorage.setItem('theme', currentTheme);
+    updateThemeIcon();
+    
+    // Update map basemap based on theme
+    if (map) {
+        map.basemap = currentTheme === 'dark' ? 'dark-gray-vector' : 'gray-vector';
+    }
+}
+
+// Update theme icon
+function updateThemeIcon() {
+    const icon = document.querySelector('#themeToggle i');
+    if (currentTheme === 'dark') {
+        icon.classList.remove('fa-moon');
+        icon.classList.add('fa-sun');
+    } else {
+        icon.classList.remove('fa-sun');
+        icon.classList.add('fa-moon');
+    }
+}
+
+// Show/hide loading spinner
+function showLoading(show) {
+    const spinner = document.getElementById('loadingSpinner');
+    spinner.style.display = show ? 'flex' : 'none';
+}
+
+// Show notification
+function showNotification(message, type = 'success') {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.innerHTML = `
+        <i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i>
+        <span>${message}</span>
+    `;
+    
+    // Add styles for notification
+    notification.style.cssText = `
+        position: fixed;
+        top: 100px;
+        right: 20px;
+        background: ${type === 'success' ? 'var(--success-color)' : 'var(--danger-color)'};
+        color: white;
+        padding: 1rem 1.5rem;
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-lg);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        z-index: 1000;
+        animation: slideIn 0.3s ease-out;
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // Remove notification after 3 seconds
+    setTimeout(() => {
+        notification.style.animation = 'slideOut 0.3s ease-out';
+        setTimeout(() => {
+            notification.remove();
+        }, 300);
+    }, 3000);
+}
+
+// Add CSS animations for notifications
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes slideIn {
+        from {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(0);
+            opacity: 1;
+        }
+    }
+    
+    @keyframes slideOut {
+        from {
+            transform: translateX(0);
+            opacity: 1;
+        }
+        to {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+    }
+`;
+document.head.appendChild(style);
+
+// Handle window resize for responsive design
+window.addEventListener('resize', () => {
+    if (window.innerWidth <= 1024) {
+        // Mobile view adjustments
+        const sidePanel = document.querySelector('.side-panel');
+        if (sidePanel) {
+            // Add toggle button for mobile
+            if (!document.getElementById('sidePanelToggle')) {
+                const toggleBtn = document.createElement('button');
+                toggleBtn.id = 'sidePanelToggle';
+                toggleBtn.className = 'side-panel-toggle';
+                toggleBtn.innerHTML = '<i class="fas fa-chart-bar"></i>';
+                toggleBtn.style.cssText = `
+                    position: fixed;
+                    top: 50%;
+                    right: 0;
+                    transform: translateY(-50%);
+                    background: var(--primary-color);
+                    color: white;
+                    border: none;
+                    padding: 1rem 0.5rem;
+                    border-radius: var(--radius-md) 0 0 var(--radius-md);
+                    cursor: pointer;
+                    z-index: 101;
+                    box-shadow: var(--shadow-md);
+                `;
+                
+                toggleBtn.addEventListener('click', () => {
+                    sidePanel.classList.toggle('active');
+                });
+                
+                document.body.appendChild(toggleBtn);
+            }
+        }
+    } else {
+        // Desktop view - remove toggle button
+        const toggleBtn = document.getElementById('sidePanelToggle');
+        if (toggleBtn) {
+            toggleBtn.remove();
+        }
+        
+        const sidePanel = document.querySelector('.side-panel');
+        if (sidePanel) {
+            sidePanel.classList.remove('active');
+        }
+    }
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+    // ESC to close popup
+    if (e.key === 'Escape') {
+        hideCustomPopup();
+    }
+    
+    // Ctrl/Cmd + / for search (future feature)
+    if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+        e.preventDefault();
+        // Implement search functionality
+    }
+});
+
+// Export data function
+async function exportData() {
+    try {
+        const query = layers.healthcareCenters.createQuery();
+        query.where = layers.healthcareCenters.definitionExpression || "1=1";
+        query.outFields = ["*"];
+        
+        const results = await layers.healthcareCenters.queryFeatures(query);
+        const data = results.features.map(f => f.attributes);
+        
+        // Convert to CSV
+        const csv = convertToCSV(data);
+        
+        // Download
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `healthcare_centers_${new Date().toISOString().split('T')[0]}.csv`;
+        link.click();
+        
+        showNotification('تم تصدير البيانات بنجاح');
+    } catch (error) {
+        console.error("Error exporting data:", error);
+        showNotification('خطأ في تصدير البيانات', 'error');
+    }
+}
+
+// Convert JSON to CSV
+function convertToCSV(data) {
+    if (!data.length) return '';
+    
+    const headers = Object.keys(data[0]);
+    const csvHeaders = headers.join(',');
+    
+    const csvRows = data.map(row => {
+        return headers.map(header => {
+            const value = row[header];
+            return typeof value === 'string' && value.includes(',') 
+                ? `"${value}"` 
+                : value;
+        }).join(',');
+    });
+    
+    return [csvHeaders, ...csvRows].join('\n');
+}
+
+// Initialize the application
+initializeHealthcareDashboard()
+    .then(([returnedView, returnedMap]) => {
+        console.log("Healthcare Dashboard initialized successfully");
+        
+        // Trigger initial resize check
+        window.dispatchEvent(new Event('resize'));
+        
+        // Add export button (optional)
+        const exportBtn = document.createElement('button');
+        exportBtn.className = 'export-btn';
+        exportBtn.innerHTML = '<i class="fas fa-download"></i> تصدير البيانات';
+        exportBtn.style.cssText = `
+            position: fixed;
+            bottom: 2rem;
+            left: 1rem;
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: var(--radius-lg);
+            cursor: pointer;
+            box-shadow: var(--shadow-md);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: var(--transition);
+            z-index: 99;
+        `;
+        
+        exportBtn.addEventListener('click', exportData);
+        exportBtn.addEventListener('mouseenter', () => {
+            exportBtn.style.transform = 'translateY(-2px)';
+            exportBtn.style.boxShadow = 'var(--shadow-lg)';
+        });
+        exportBtn.addEventListener('mouseleave', () => {
+            exportBtn.style.transform = 'translateY(0)';
+            exportBtn.style.boxShadow = 'var(--shadow-md)';
+        });
+        
+        document.body.appendChild(exportBtn);
+    })
+    .catch((error) => {
+        console.error("Failed to initialize dashboard:", error);
+        showLoading(false);
+        showNotification('خطأ في تحميل الخريطة', 'error');
+    });
