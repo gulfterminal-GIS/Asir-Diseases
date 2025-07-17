@@ -115,6 +115,7 @@ async function initializeHealthcareDashboard() {
             url: "https://raw.githubusercontent.com/gulfterminal-GIS/Asir-Diseases/refs/heads/main/transfers_number.geojson",
             title: "المراكز الصحية",
             renderer: heatmapRenderer,
+            outFields: "*",
             visible: true
         });
 
@@ -207,8 +208,6 @@ async function initializeHealthcareDashboard() {
             // Calculate statistics
             calculateStatistics();
             
-            // Populate filter options
-            populateFilters();
 
             // Switch renderer based on zoom
             const savedHeatmapRenderer = layers.healthcareCenters.renderer;
@@ -324,14 +323,6 @@ function setupCustomEventHandlers(view, Graphic, Point) {
         icon.classList.toggle('fa-chevron-up');
     });
 
-    // Filter controls
-    document.getElementById('applyFilters').addEventListener('click', applyFilters);
-    document.getElementById('resetFilters').addEventListener('click', resetFilters);
-    document.getElementById('transferRange').addEventListener('input', (e) => {
-        document.getElementById('rangeMin').textContent = '0';
-        document.getElementById('rangeMax').textContent = e.target.value;
-    });
-
     // Theme toggle
     document.getElementById('themeToggle').addEventListener('click', toggleTheme);
 }
@@ -340,13 +331,23 @@ function setupCustomEventHandlers(view, Graphic, Point) {
 function showCustomPopup(graphic, Point) {
     const popup = document.getElementById('customPopup');
     const attributes = graphic.attributes;
+    
+    // Debug: log attributes to see what fields are available
+    console.log('Popup attributes:', attributes);
 
-    // Update popup title
-    document.getElementById('popupTitle').textContent = attributes.facility_name || 'مركز صحي';
+    // Update popup title using the correct field names
+    document.getElementById('popupTitle').textContent = 
+        attributes.facility_name || 
+        attributes['اسم_التجمع'] || 
+        'مركز صحي';
 
-    // Create popup content
+    // Create popup content with correct field names
     const content = `
         <div class="popup-info-grid">
+            <div class="popup-info-item">
+                <div class="popup-info-label">اسم التجمع</div>
+                <div class="popup-info-value">${attributes['اسم_التجمع'] || 'غير محدد'}</div>
+            </div>
             <div class="popup-info-item">
                 <div class="popup-info-label">النوع</div>
                 <div class="popup-info-value">${attributes.facility_type || 'غير محدد'}</div>
@@ -362,6 +363,17 @@ function showCustomPopup(graphic, Point) {
             <div class="popup-info-item">
                 <div class="popup-info-label">ساعات العمل</div>
                 <div class="popup-info-value">${attributes.working_hours || 'غير محدد'}</div>
+            </div>
+            <div class="popup-info-item">
+                <div class="popup-info-label">الإحداثيات</div>
+                <div class="popup-info-value" style="font-size: 0.875rem;">
+                    ${attributes.latitude ? `${attributes.latitude.toFixed(4)}, ${attributes.longitude.toFixed(4)}` : 'غير محدد'}
+                </div>
+            </div>
+
+            <div class="popup-info-item">
+                <div class="popup-info-label">الحجم</div>
+                <div class="popup-info-value">${attributes.Size || 'غير محدد'} ساعة</div>
             </div>
         </div>
         
@@ -381,14 +393,14 @@ function showCustomPopup(graphic, Point) {
             <i class="fas fa-virus"></i> توزيع الأمراض
         </h4>
         <div class="disease-grid" style="grid-template-columns: repeat(3, 1fr);">
-            ${createDiseaseItem('الغدة الدرقية', attributes.thyroid_gland)}
-            ${createDiseaseItem('دهون الدم', attributes.tlood_lipids)}
-            ${createDiseaseItem('المرارة', attributes.gallbladder)}
-            ${createDiseaseItem('فقر الدم المنجلي', attributes.sickle_cell_anemia)}
-            ${createDiseaseItem('أمراض الكبد', attributes.liver_disease)}
-            ${createDiseaseItem('سرطان الثدي', attributes.breast_cancer)}
-            ${createDiseaseItem('سرطان القولون', attributes.colon_cancer)}
-            ${createDiseaseItem('سرطان عنق الرحم', attributes.cervical_cancer)}
+            ${createDiseaseItem('الغدة الدرقية', attributes.thyroid_gland || 0)}
+            ${createDiseaseItem('دهون الدم', attributes.tlood_lipids || 0)}
+            ${createDiseaseItem('المرارة', attributes.gallbladder || 0)}
+            ${createDiseaseItem('فقر الدم المنجلي', attributes.sickle_cell_anemia || 0)}
+            ${createDiseaseItem('أمراض الكبد', attributes.liver_disease || 0)}
+            ${createDiseaseItem('سرطان الثدي', attributes.breast_cancer || 0)}
+            ${createDiseaseItem('سرطان القولون', attributes.colon_cancer || 0)}
+            ${createDiseaseItem('سرطان عنق الرحم', attributes.cervical_cancer || 0)}
         </div>
     `;
 
@@ -398,11 +410,29 @@ function showCustomPopup(graphic, Point) {
 
 // Create disease item for popup
 function createDiseaseItem(name, count) {
+    const percentage = count > 0 ? Math.round((count / 1000) * 100) : 0; // Example percentage calculation
     return `
-        <div class="disease-card" style="padding: 0.75rem;">
+        <div class="disease-card" style="padding: 0.75rem; position: relative;">
             <div class="disease-name">${name}</div>
             <div class="disease-count">${count || 0}</div>
-        </div>
+            <div style="
+                position: absolute;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                height: 3px;
+                background: var(--bg-tertiary);
+                border-radius: 2px;
+                overflow: hidden;
+            ">
+                <div style="
+                    width: ${percentage}%;
+                    height: 100%;
+                    background: var(--primary-color);
+                    transition: width 0.5s ease;
+                "></div>
+            </div>
+                </div>
     `;
 }
 
@@ -411,6 +441,7 @@ function hideCustomPopup() {
     document.getElementById('customPopup').style.display = 'none';
 }
 
+// Calculate and display statistics
 // Calculate and display statistics
 async function calculateStatistics() {
     try {
@@ -443,11 +474,18 @@ async function calculateStatistics() {
             animateValue('totalTransfers', 0, stats.total_transfers, 2000);
             animateValue('avgTransfers', 0, Math.round(stats.avg_transfers), 2000);
             
-            // Count active centers
+            // Count active centers (based on facility_status field)
             const activeQuery = layers.healthcareCenters.createQuery();
-            activeQuery.where = "facility_status = 'Active'";
-            const activeResults = await layers.healthcareCenters.queryFeatureCount(activeQuery);
-            animateValue('activeCenters', 0, activeResults, 2000);
+            activeQuery.where = "facility_status = 'Active' OR facility_status = 'نشط'";
+            
+            try {
+                const activeResults = await layers.healthcareCenters.queryFeatureCount(activeQuery);
+                animateValue('activeCenters', 0, activeResults, 2000);
+            } catch (error) {
+                // If the query fails, count all centers as active
+                console.log("Active centers query failed, counting all centers");
+                animateValue('activeCenters', 0, stats.total_centers, 2000);
+            }
         }
 
         // Calculate disease distribution
@@ -456,6 +494,7 @@ async function calculateStatistics() {
         console.error("Error calculating statistics:", error);
     }
 }
+
 
 // Calculate disease distribution
 async function calculateDiseaseDistribution() {
@@ -467,8 +506,8 @@ async function calculateDiseaseDistribution() {
             { field: 'sickle_cell_anemia', name: 'فقر الدم المنجلي', icon: 'fa-dna' },
             { field: 'liver_disease', name: 'أمراض الكبد', icon: 'fa-liver' },
             { field: 'breast_cancer', name: 'سرطان الثدي', icon: 'fa-ribbon' },
-            { field: 'colon_cancer', name: 'سرطان القولون', icon: 'fa-colon' },
-            { field: 'cervical_cancer', name: 'سرطان عنق الرحم', icon: 'fa-female' }
+            { field: 'colon_cancer', name: 'سرطان القولون', icon: 'fa-stethoscope' },
+            { field: 'cervical_cancer', name: 'سرطان عنق الرحم', icon: 'fa-ribbon' }
         ];
 
         const diseaseGrid = document.getElementById('diseaseGrid');
@@ -511,113 +550,6 @@ async function calculateDiseaseDistribution() {
     }
 }
 
-// Populate filter dropdowns
-async function populateFilters() {
-    try {
-        // Get unique sectors
-        const sectorQuery = layers.healthcareCenters.createQuery();
-        sectorQuery.where = "1=1";
-        sectorQuery.returnDistinctValues = true;
-        sectorQuery.outFields = ["Sector"];
-        sectorQuery.orderByFields = ["Sector"];
-
-        const sectorResults = await layers.healthcareCenters.queryFeatures(sectorQuery);
-        const sectorSelect = document.getElementById('sectorFilter');
-        
-        sectorResults.features.forEach(feature => {
-            if (feature.attributes.Sector) {
-                const option = document.createElement('option');
-                option.value = feature.attributes.Sector;
-                option.textContent = feature.attributes.Sector;
-                sectorSelect.appendChild(option);
-            }
-        });
-
-        // Get unique facility types
-        const typeQuery = layers.healthcareCenters.createQuery();
-        typeQuery.where = "1=1";
-        typeQuery.returnDistinctValues = true;
-        typeQuery.outFields = ["facility_type"];
-        typeQuery.orderByFields = ["facility_type"];
-
-        const typeResults = await layers.healthcareCenters.queryFeatures(typeQuery);
-        const typeSelect = document.getElementById('typeFilter');
-        
-        typeResults.features.forEach(feature => {
-            if (feature.attributes.facility_type) {
-                const option = document.createElement('option');
-                option.value = feature.attributes.facility_type;
-                option.textContent = feature.attributes.facility_type;
-                typeSelect.appendChild(option);
-            }
-        });
-
-        // Set max value for transfer range
-        const maxQuery = layers.healthcareCenters.createQuery();
-        maxQuery.where = "1=1";
-        maxQuery.outStatistics = [{
-            statisticType: "max",
-            onStatisticField: "transfers_number",
-            outStatisticFieldName: "max_transfers"
-        }];
-
-        const maxResults = await layers.healthcareCenters.queryFeatures(maxQuery);
-        if (maxResults.features.length > 0) {
-            const maxTransfers = maxResults.features[0].attributes.max_transfers;
-            const rangeSlider = document.getElementById('transferRange');
-            rangeSlider.max = maxTransfers;
-            document.getElementById('rangeMax').textContent = maxTransfers;
-        }
-    } catch (error) {
-        console.error("Error populating filters:", error);
-    }
-}
-
-// Apply filters
-async function applyFilters() {
-    const sector = document.getElementById('sectorFilter').value;
-    const type = document.getElementById('typeFilter').value;
-    const maxTransfers = document.getElementById('transferRange').value;
-
-    let whereClause = "1=1";
-    
-    if (sector) {
-        whereClause += ` AND Sector = '${sector}'`;
-    }
-    
-    if (type) {
-        whereClause += ` AND facility_type = '${type}'`;
-    }
-    
-    whereClause += ` AND transfers_number <= ${maxTransfers}`;
-
-    // Apply definition expression to filter features
-    layers.healthcareCenters.definitionExpression = whereClause;
-
-    // Recalculate statistics with filters
-    calculateStatistics();
-    calculateDiseaseDistribution();
-
-    // Show filter notification
-    showNotification('تم تطبيق التصفية بنجاح');
-}
-
-// Reset filters
-function resetFilters() {
-    document.getElementById('sectorFilter').value = '';
-    document.getElementById('typeFilter').value = '';
-    document.getElementById('transferRange').value = document.getElementById('transferRange').max;
-    document.getElementById('rangeMax').textContent = document.getElementById('transferRange').max;
-    
-    // Clear definition expression
-    layers.healthcareCenters.definitionExpression = null;
-    
-    // Recalculate statistics
-    calculateStatistics();
-    calculateDiseaseDistribution();
-
-    showNotification('تم إعادة تعيين التصفية');
-}
 
 // Animate numeric values
 function animateValue(elementOrId, start, end, duration) {

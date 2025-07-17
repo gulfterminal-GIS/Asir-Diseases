@@ -9,19 +9,21 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <!-- Theme Toggle -->
-    <button class="theme-toggle" id="themeToggle" aria-label="تبديل الوضع">
-        <i class="fas fa-moon"></i>
-    </button>
 
-    <!-- Header -->
+
+    <!-- Update the header to include theme button -->
     <header class="app-header">
         <div class="header-content">
             <h1 class="app-title">
                 <i class="fas fa-hospital"></i>
                 لوحة معلومات المراكز الصحية
             </h1>
-            <span class="region-badge">منطقة عسير</span>
+            <div class="header-actions">
+                <span class="region-badge">منطقة عسير</span>
+                <button class="theme-toggle" id="themeToggle" aria-label="تبديل الوضع">
+                    <i class="fas fa-moon"></i>
+                </button>
+            </div>
         </div>
     </header>
 
@@ -59,8 +61,8 @@
                         <span class="legend-label">عدد التحويلات</span>
                         <div class="heatmap-gradient"></div>
                         <div class="gradient-labels">
-                            <span>منخفض</span>
                             <span>مرتفع</span>
+                            <span>منخفض</span>
                         </div>
                     </div>
                 </div>
@@ -153,48 +155,6 @@
                 </div>
             </div>
 
-            <!-- Filter Panel -->
-            <div class="filter-panel">
-                <h2 class="section-title">
-                    <i class="fas fa-filter"></i>
-                    التصفية
-                </h2>
-                
-                <div class="filter-group">
-                    <label class="filter-label">القطاع</label>
-                    <select class="filter-select" id="sectorFilter">
-                        <option value="">جميع القطاعات</option>
-                    </select>
-                </div>
-
-                <div class="filter-group">
-                    <label class="filter-label">نوع المنشأة</label>
-                    <select class="filter-select" id="typeFilter">
-                        <option value="">جميع الأنواع</option>
-                    </select>
-                </div>
-
-                <div class="filter-group">
-                    <label class="filter-label">عدد التحويلات</label>
-                    <div class="range-slider">
-                        <input type="range" id="transferRange" min="0" max="1000" value="0" class="slider">
-                        <div class="range-values">
-                            <span id="rangeMin">0</span>
-                            <span>-</span>
-                            <span id="rangeMax">1000</span>
-                        </div>
-                    </div>
-                </div>
-
-                <button class="filter-apply" id="applyFilters">
-                    <i class="fas fa-check"></i>
-                    تطبيق التصفية
-                </button>
-                <button class="filter-reset" id="resetFilters">
-                    <i class="fas fa-undo"></i>
-                    إعادة تعيين
-                </button>
-            </div>
 
             <!-- Disease Distribution -->
             <div class="disease-panel">
