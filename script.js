@@ -207,7 +207,8 @@ async function initializeHealthcareDashboard() {
 
             // Calculate statistics
             calculateStatistics();
-            
+            // // Setup search functionality
+            // setupSearch(view);
 
             // Switch renderer based on zoom
             const savedHeatmapRenderer = layers.healthcareCenters.renderer;
@@ -490,6 +491,9 @@ async function calculateStatistics() {
 
         // Calculate disease distribution
         calculateDiseaseDistribution();
+
+        // Create chart after statistics are loaded
+        createTopCentersChart();
     } catch (error) {
         console.error("Error calculating statistics:", error);
     }
@@ -842,3 +846,345 @@ initializeHealthcareDashboard()
         showLoading(false);
         showNotification('خطأ في تحميل الخريطة', 'error');
     });
+
+
+    // Add search functionality
+// Add search functionality
+function setupSearch(view) {
+    const searchInput = document.getElementById('searchInput');
+    const clearButton = document.getElementById('clearSearch');
+    const searchResults = document.getElementById('searchResults');
+    
+    if (!searchInput || !clearButton || !searchResults) {
+        console.error("Search elements not found in DOM");
+        return;
+    }
+    
+    let searchTimeout;
+
+    searchInput.addEventListener('input', (e) => {
+        const value = e.target.value.trim();
+        clearButton.style.display = value ? 'block' : 'none';
+        
+        clearTimeout(searchTimeout);
+        if (value.length > 2) {
+            searchTimeout = setTimeout(() => performSearch(value), 300);
+        } else {
+            searchResults.style.display = 'none';
+        }
+    });
+
+    clearButton.addEventListener('click', () => {
+        searchInput.value = '';
+        clearButton.style.display = 'none';
+        searchResults.style.display = 'none';
+    });
+
+    async function performSearch(searchText) {
+        try {
+            const query = layers.healthcareCenters.createQuery();
+            query.where = `facility_name LIKE '%${searchText}%' OR Sector LIKE '%${searchText}%' OR اسم_التجمع LIKE '%${searchText}%'`;
+            query.outFields = ["*"];
+            query.returnGeometry = true;
+
+            const results = await layers.healthcareCenters.queryFeatures(query);
+            displaySearchResults(results.features);
+        } catch (error) {
+            console.error("Search error:", error);
+        }
+    }
+
+    function displaySearchResults(features) {
+        searchResults.innerHTML = '';
+        
+        if (features.length === 0) {
+            searchResults.innerHTML = '<div class="search-result-item">لا توجد نتائج</div>';
+        } else {
+            features.slice(0, 10).forEach(feature => {
+                const item = document.createElement('div');
+                item.className = 'search-result-item';
+                item.innerHTML = `
+                    <div class="search-result-name">${feature.attributes.facility_name || feature.attributes['اسم_التجمع']}</div>
+                    <div class="search-result-info">
+                        ${feature.attributes.Sector} • ${feature.attributes.transfers_number} تحويل
+                    </div>
+                `;
+                
+                item.addEventListener('click', () => {
+                    view.goTo({
+                        target: feature.geometry,
+                        zoom: 15
+                    }, {
+                        duration: 1500
+                    }).then(() => {
+                        // Load Point module and show popup
+                        loadModule("esri/geometry/Point").then((Point) => {
+                            showCustomPopup(feature, Point);
+                        });
+                    });
+                    searchResults.style.display = 'none';
+                    searchInput.value = '';
+                    clearButton.style.display = 'none';
+                });
+                
+                searchResults.appendChild(item);
+            });
+        }
+        
+        searchResults.style.display = 'block';
+    }
+
+    // Close search results when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.search-container')) {
+            searchResults.style.display = 'none';
+        }
+    });
+}
+
+
+
+
+// Add hover effect
+function setupHoverEffect(view) {
+    let highlight;
+    let tooltip = createTooltip();
+
+    view.on("pointer-move", async (event) => {
+        const response = await view.hitTest(event);
+        const results = response.results.filter(result => 
+            result.graphic.layer === layers.healthcareCenters
+        );
+
+        if (results.length > 0) {
+            const graphic = results[0].graphic;
+            const screenPoint = view.toScreen(graphic.geometry);
+            
+            // Show tooltip
+            tooltip.innerHTML = `
+                <div style="font-weight: 600;">${graphic.attributes.facility_name || graphic.attributes['اسم_التجمع']}</div>
+                <div style="font-size: 0.875rem; color: var(--text-secondary);">
+                    التحويلات: ${graphic.attributes.transfers_number}
+                </div>
+            `;
+            tooltip.style.display = 'block';
+            tooltip.style.left = screenPoint.x + 'px';
+            tooltip.style.top = (screenPoint.y - 60) + 'px';
+            
+            document.body.style.cursor = 'pointer';
+        } else {
+            tooltip.style.display = 'none';
+            document.body.style.cursor = 'default';
+        }
+    });
+
+    function createTooltip() {
+        const tooltip = document.createElement('div');
+        tooltip.style.cssText = `
+            position: absolute;
+            background: var(--bg-primary);
+            padding: 0.5rem 0.75rem;
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-md);
+            pointer-events: none;
+            z-index: 99;
+            display: none;
+            transform: translateX(-50%);
+        `;
+        document.body.appendChild(tooltip);
+        return tooltip;
+    }
+}
+
+
+// Fixed print functionality
+async function printMap() {
+    try {
+        showLoading(true);
+        const [Print] = await Promise.all([
+            loadModule("esri/widgets/Print")
+        ]);
+
+        // Create a temporary container for the print widget
+        const printContainer = document.createElement('div');
+        printContainer.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--bg-primary);
+            padding: 2rem;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-xl);
+            z-index: 1000;
+            min-width: 300px;
+        `;
+        
+        // Add close button
+        const closeBtn = document.createElement('button');
+        closeBtn.innerHTML = '<i class="fas fa-times"></i>';
+        closeBtn.style.cssText = `
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: var(--bg-secondary);
+            border: none;
+            width: 2rem;
+            height: 2rem;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        `;
+        
+        printContainer.appendChild(closeBtn);
+        document.body.appendChild(printContainer);
+
+        const print = new Print({
+            view: view,
+            container: printContainer,
+            printServiceUrl: "https://utility.arcgisonline.com/arcgis/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task"
+        });
+
+        closeBtn.addEventListener('click', () => {
+            print.destroy();
+            printContainer.remove();
+            showLoading(false);
+        });
+
+        showLoading(false);
+    } catch (error) {
+        console.error("Print error:", error);
+        showLoading(false);
+        showNotification('خطأ في الطباعة', 'error');
+    }
+}
+// Add print button
+const printBtn = document.createElement('button');
+printBtn.className = 'control-btn print';
+printBtn.id = 'printBtn';
+printBtn.innerHTML = '<i class="fas fa-print"></i>';
+printBtn.setAttribute('aria-label', 'طباعة الخريطة');
+document.querySelector('.custom-controls').appendChild(printBtn);
+printBtn.addEventListener('click', printMap);
+
+
+// Add Chart.js to your HTML first
+// <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+async function createTopCentersChart() {
+    try {
+        const query = layers.healthcareCenters.createQuery();
+        query.where = "1=1";
+        query.outFields = ["facility_name", "اسم_التجمع", "transfers_number"];
+        query.orderByFields = ["transfers_number DESC"];
+        query.num = 10;
+
+        const results = await layers.healthcareCenters.queryFeatures(query);
+        
+        if (results.features.length === 0) {
+            console.log("No features found for chart");
+            return;
+        }
+        
+        const labels = results.features.map(f => 
+            f.attributes.facility_name || f.attributes['اسم_التجمع'] || 'غير محدد'
+        );
+        const data = results.features.map(f => f.attributes.transfers_number || 0);
+
+        const ctx = document.getElementById('topCentersChart');
+        if (!ctx) {
+            console.error("Chart canvas not found");
+            return;
+        }
+
+        // Check if chart exists and has destroy method before destroying
+        if (window.topCentersChart && typeof window.topCentersChart.destroy === 'function') {
+            window.topCentersChart.destroy();
+        }
+
+        // For Chart.js 3.x, use 'bar' type with indexAxis option for horizontal bars
+        window.topCentersChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'عدد التحويلات',
+                    data: data,
+                    backgroundColor: 'rgba(37, 99, 235, 0.8)',
+                    borderColor: 'rgba(37, 99, 235, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                indexAxis: 'y', // This makes the bar chart horizontal
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        ticks: {
+                            font: {
+                                family: 'Arial',
+                                size: 11
+                            }
+                        }
+                    },
+                    y: {
+                        ticks: {
+                            font: {
+                                family: 'Arial',
+                                size: 10
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    } catch (error) {
+        console.error("Error creating chart:", error);
+    }
+}
+
+
+
+// Add fullscreen functionality
+function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen();
+        showNotification('وضع ملء الشاشة');
+    } else {
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        }
+    }
+}
+
+// Add fullscreen button
+const fullscreenBtn = document.createElement('button');
+fullscreenBtn.className = 'control-btn fullscreen';
+fullscreenBtn.id = 'fullscreenBtn';
+fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
+fullscreenBtn.setAttribute('aria-label', 'ملء الشاشة');
+document.querySelector('.custom-controls').appendChild(fullscreenBtn);
+fullscreenBtn.addEventListener('click', toggleFullscreen);
+
+// Update icon on fullscreen change
+document.addEventListener('fullscreenchange', () => {
+    const icon = fullscreenBtn.querySelector('i');
+    if (document.fullscreenElement) {
+        icon.classList.remove('fa-expand');
+        icon.classList.add('fa-compress');
+    } else {
+        icon.classList.remove('fa-compress');
+        icon.classList.add('fa-expand');
+    }
+});
+
+

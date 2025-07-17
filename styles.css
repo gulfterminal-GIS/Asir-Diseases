@@ -182,6 +182,12 @@ html, body {
     z-index: 99;
 }
 
+@media (max-width: 640px) {
+    .custom-legend {
+        bottom: 4rem;
+    }
+}
+
 .legend-header {
     padding: 1rem;
     border-bottom: 1px solid var(--border-color);
@@ -238,13 +244,13 @@ html, body {
 /* Layer Control */
 .layer-control {
     position: absolute;
-    top: 1rem;
-    left: 4rem;
+    top: 1rem; /* Move down to make room for search */
+    left: 1rem;
     background: var(--bg-primary);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
     min-width: 200px;
-    z-index: 99;
+    z-index: 97; /* Lower than search */
 }
 
 .layer-header {
@@ -479,6 +485,111 @@ html, body {
     color: var(--primary-color);
 }
 
+
+
+
+/* Search Container */
+/* Search Container - Updated positioning */
+.search-container {
+    position: fixed; /* Changed from absolute to fixed */
+    top: 80px; /* Below header */
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 999; /* High z-index */
+    width: 90%;
+    max-width: 400px;
+}
+
+.search-box {
+    position: relative;
+    background: var(--bg-primary);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+    border: 2px solid var(--border-color);
+}
+
+.search-icon {
+    position: absolute;
+    right: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-tertiary);
+    pointer-events: none;
+}
+
+.search-input {
+    width: 100%;
+    padding: 1rem 3rem;
+    border: none;
+    background: transparent;
+    font-size: 1rem;
+    color: var(--text-primary);
+    font-family: inherit;
+}
+
+.search-input:focus {
+    outline: none;
+}
+
+.search-input::placeholder {
+    color: var(--text-tertiary);
+}
+
+.clear-search {
+    position: absolute;
+    left: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    padding: 0.5rem;
+    transition: var(--transition);
+}
+
+.clear-search:hover {
+    color: var(--text-primary);
+}
+
+.search-results {
+    margin-top: 0.5rem;
+    background: var(--bg-primary);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    max-height: 300px;
+    overflow-y: auto;
+    display: none;
+    border: 1px solid var(--border-color);
+}
+
+.search-result-item {
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+
+.search-result-item:hover {
+    background: var(--bg-secondary);
+}
+
+.search-result-item:last-child {
+    border-bottom: none;
+}
+
+.search-result-name {
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+    color: var(--text-primary);
+}
+
+.search-result-info {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
 
 /* Disease Panel */
 .disease-panel {
@@ -735,6 +846,30 @@ html, body {
     .popup-info-grid {
         grid-template-columns: 1fr;
     }
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 640px) {
+    .search-container {
+        width: calc(100% - 2rem);
+        left: 1rem;
+        transform: none;
+    }
+}
+
+
+.chart-panel {
+    background: var(--bg-primary);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    margin-top: 2rem;
+    box-shadow: var(--shadow-sm);
+}
+
+.chart-container {
+    position: relative;
+    height: 300px;
+    margin-top: 1rem;
 }
 
 /* Accessibility */
